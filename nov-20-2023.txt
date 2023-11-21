@@ -1,0 +1,18 @@
+Done:
+- Label dataset scpcs000021
+	- downloaded a gene marker database from CellMarker 2.0
+	- created function `cellmarker_prop` that determine the number
+		of clusters gene markers exist in the database (per cell type)
+- Downloaded cell2location
+- Read the tutorial
+
+- add script to download TCGA data
+	- rna-seq
+	- microarray
+
+- create google sheet and collect samples with both microarray and
+rna-seq (https://docs.google.com/spreadsheets/d/1slOnzy5JBgjehcCMs6_1qRtbGzgjbGBuQwXt1H0OBzA/edit#gid=0)
+ 
+- reproduce Bingqing's repo
+
+TODO:
