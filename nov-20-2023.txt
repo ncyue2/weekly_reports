@@ -12,7 +12,14 @@ Done:
 
 - create google sheet and collect samples with both microarray and
 rna-seq (https://docs.google.com/spreadsheets/d/1slOnzy5JBgjehcCMs6_1qRtbGzgjbGBuQwXt1H0OBzA/edit#gid=0)
- 
-- reproduce Bingqing's repo
+
+- instructions on SSH (setup-linux)
+
+- reproduce repo db-hgsov-cisp
+	- directories: gendoo_et_al_19, liu_et_al_20
+	- create test cases
+	- create a run_all script (so that no need to click one by one)
 
 TODO:
+- finish reproduce repo db-hgsov-cisp
+- cell2location
