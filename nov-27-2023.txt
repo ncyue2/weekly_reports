@@ -1,0 +1,7 @@
+DONE:
+- write up on required algoirthms
+	- sra-tools
+	- RSEM
+	- STAR
+- create test cases to test for datasets in liu_et_al_20
+- reproduce the sra-tools, rsem, and star
