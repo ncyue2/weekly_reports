@@ -5,3 +5,15 @@ DONE:
 	- STAR
 - create test cases to test for datasets in liu_et_al_20
 - reproduce the sra-tools, rsem, and star
+- write up on setup-linux
+	- set up project
+	- git push and git pull 
+	- using patefiant
+	- create new installation script
+
+TODO:
+- mv the R scripts into the get.sh
+- fix the scripts for downloading the SRA data
+	- use dlazy
+- cell annotation on the GSE data
+- cell2location
