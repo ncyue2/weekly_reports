@@ -1,0 +1,22 @@
+DONE:
+- Moved R scripts into the get.sh accordingly
+- Fix README.md
+	- add in biocmanger version
+	- remove descriptions for individual download script
+- Fix the scripts for downloading the SRA data
+	- used dlazy
+	- remove repeated scripts
+- Fix the mitochondria percent cutoff for dataset scpca
+	- obtain a list of gene markers for annotations
+- Cell annotated dataset gse210567
+- Create and run scripts for Cell2location
+	- Create annData object
+	- Determine the expected cell abundance
+
+TODO:
+- Run Cell2location on all visium
+	- each visium match to different samples
+- Finish cell annotation
+- Perform analysis
+	- G function
+	- F function
