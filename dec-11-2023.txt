@@ -1,0 +1,8 @@
+DONE:
+- Prepare dataset GSE210567 for Cell2location
+	- annData
+	- sce
+- Cell2location on dataset GSE210567
+	- GSM6432723
+	- GSM6432725
+	- GSM6432735
