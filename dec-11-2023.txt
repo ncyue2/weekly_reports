@@ -6,3 +6,9 @@ DONE:
 	- GSM6432723
 	- GSM6432725
 	- GSM6432735
+
+TODO:
+- cell annotation
+- Cell2location
+- G function
+- F function
