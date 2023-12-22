@@ -1,0 +1,699 @@
+---
+title: "dec-18-2023"
+date: "2023-12-21"
+output: 
+  github_document:
+    toc: true
+    toc_depth: 4
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(io)
+library(ggplot2)
+library(spatstat)
+library(scuttle)
+library(scran)
+library(scater)
+library(scDblFinder)
+library(BiocParallel)
+library(SingleR)
+library(celldex)
+library(SingleCellExperiment)
+```
+
+\newpage
+
+## Understanding the spatial distribution of each cell types
+
+### Visium st004 & scRNA-seq-GSM6432723
+
+```{r}
+# set up
+plotting_colors <- c("#000000", "#E69F00", "#56B4E9", "#009E73", 
+  "#F0E442", "#0072B2", "#D55E00", "#CC79A7","#332288", "#888888",
+  "#661100")
+
+visium_sample <- "st004";
+scrna_sample <- "gsm6432723";
+
+cell2loc_output <- qread(
+  paste0("../ped-hgg-st/cell2location/st004/results_", scrna_sample, "_", 
+    visium_sample, "/cell_type_mapping_estimations.csv")
+)
+
+dim(cell2loc_output) # [1] 1347   19
+cell2loc_output[1:5, ]
+
+# extract and rename cell types
+unique_celltypes <- tolower(gsub(" ", "_", colnames(cell2loc_output)[-c(1:8)])); 
+# first 7 columns are not cell type
+unique_celltypes[11] <- "vascular_n_other"; # to replace the & with n
+
+# visualize how the cell type distributed
+summary(cell2loc_output$array_row) # min 16, max 55
+summary(cell2loc_output$array_col) # min 0, max 104
+```
+
+The min and max of the array row and array column are used to set the window size of the later plots.
+
+```{r}
+# function for plotting
+# fct for plotting
+# required the cell2location output as "cell2loc_output"
+.plot_celltype <- function(celltype_name, cutoff, return_df = FALSE){
+  present_cutoff <- cutoff;
+  cell2loc_output$present <- 
+    ifelse(cell2loc_output[[celltype_name]] > present_cutoff, 1, 0);
+  celltype_df <- data.frame(
+    "array_row" = cell2loc_output$array_row,
+    "array_col" = cell2loc_output$array_col,
+    "present" = cell2loc_output$present
+  )
+  
+  celltype_df <- celltype_df[celltype_df$present == 1, ]
+  
+  print(ggplot(celltype_df, aes(array_row, array_col)) + 
+    geom_point(size = 1) +
+    labs(title = paste0(celltype_name, "-cutoff_", present_cutoff), 
+      x = "array_x", y = "array_y") +
+    theme_classic() + 
+    xlim(10, 60) + ylim(0, 110))
+  
+  if (return_df){
+    celltype_df$present <- tolower(gsub(" ", "", celltype_name));
+    return (celltype_df)
+  }
+}
+```
+
+The results given in Cell2location are the cell type abundances (i.e., continuous values); which show how many cells are estimated to exist in each spot. We are interested in seeing how the cell type distributed.
+
+We will use a local cutoff for now, we will refer back to the Cell2location cell type abundance plots, in which there is a cell type abundance scale provided, and that we will select (by eye-balling) the middle value.
+
+```{r, out.width = "50%", out.height = "50%"}
+# save the resulting table while investigating the plot
+all_celltype_df_lst <- vector(mode = "list", length = length(unique_celltypes))
+all_celltype_df_lst[[1]] <- .plot_celltype("Astrocytes", cutoff = 3, return_df = TRUE);
+# distribute across, but seems to have fewer near bottom left
+all_celltype_df_lst[[2]] <- .plot_celltype("Ependymal", cutoff = 1, return_df = TRUE); 
+# distribute across but seems to have some patterns?
+all_celltype_df_lst[[3]] <- .plot_celltype("Glial progenitors", cutoff = 1, return_df = TRUE); 
+# distribute near the edge
+all_celltype_df_lst[[4]] <- .plot_celltype("Immune", cutoff = 1.5, return_df = TRUE); 
+# distribute near the edge
+all_celltype_df_lst[[5]] <- .plot_celltype("Neuronal progenitors", cutoff = 2.5, return_df = TRUE); 
+# distributed across, but seems to have an empty rung around the middle
+all_celltype_df_lst[[6]] <- .plot_celltype("Neurons", cutoff = 2, return_df = TRUE); 
+# similar to neuronal progenitors
+all_celltype_df_lst[[7]] <- .plot_celltype("OPC", cutoff = 4, return_df = TRUE)
+# distribute near the edge
+all_celltype_df_lst[[8]] <- .plot_celltype("Oligodendrocytes", cutoff = 1.2, return_df = TRUE)
+# distribute near the edge and middle
+all_celltype_df_lst[[9]] <- .plot_celltype("RGC", cutoff = 0.8, return_df = TRUE)
+# distribute near the edge, but more than data points than OPC
+all_celltype_df_lst[[10]] <- .plot_celltype("Uncertain", cutoff = 1, return_df = TRUE)
+# seems to be around the outer ring and middle
+all_celltype_df_lst[[11]] <- .plot_celltype("Vascular & other", cutoff = 1.75, return_df = TRUE)
+# distribute around the outer ring
+names(all_celltype_df_lst) <- unique_celltypes;
+```
+
+We are now interest in the overview of how the cell types distributed.
+```{r}
+# plot all cell types together
+all_celltype_df <- do.call(rbind, all_celltype_df_lst);
+colnames(all_celltype_df) <- c("array_x", "array_y", "cell_type");
+
+ggplot(all_celltype_df, aes(array_x, array_y, color = cell_type)) +
+  geom_point(size = 1.5, alpha = 0.5) +
+  scale_color_manual(values = plotting_colors) +
+  labs(x = "array_x", y = "array_y") +
+  theme_classic() +
+  xlim(10, 60) + ylim(0, 110)
+
+gsm6432723_celltypes_plt <- 
+  ggplot(all_celltype_df, aes(array_x, array_y, color = cell_type)) +
+  geom_point(size = 1.5, alpha = 0.5) +
+  scale_color_manual(values = plotting_colors) +
+  labs(x = "array_x", y = "array_y") +
+  theme_classic() +
+  xlim(10, 60) + ylim(0, 110) + 
+  facet_wrap(~cell_type,  ncol = 3)
+gsm6432723_celltypes_plt
+```
+
+### Visium st004 & scRNA-seq-GSM6432723
+```{r}
+# set up
+plotting_colors <- c("#000000", "#E69F00", "#56B4E9", "#009E73", 
+  "#F0E442", "#0072B2", "#D55E00", "#CC79A7","darkred", "#332288",
+  "#888888", "#661100")
+
+visium_sample <- "st004";
+scrna_sample <- "gsm6432725";
+
+cell2loc_output <- qread(
+  paste0("../ped-hgg-st/cell2location/st004/results_", scrna_sample, "_", 
+    visium_sample, "/cell_type_mapping_estimations.csv")
+)
+
+dim(cell2loc_output) # [1] 1347   20
+cell2loc_output[1:5, ]
+
+unique_celltypes <- tolower(gsub(" ", "_", colnames(cell2loc_output)[-c(1:8)])); 
+# first 7 columns are not cell type
+unique_celltypes[12] <- "vascular_n_other"; # to replace the & with n
+```
+
+```{r, out.width = "50%", out.height = "50%"}
+# save the resulting table while investigating the plot
+all_celltype_df_lst <- vector(mode = "list", length = length(unique_celltypes))
+all_celltype_df_lst[[1]] <- .plot_celltype("Astrocytes", cutoff = 9, return_df = TRUE);
+# near the edges and in the middle
+all_celltype_df_lst[[2]] <- .plot_celltype("Ependymal", cutoff = 0.8, return_df = TRUE); 
+# distribute across
+all_celltype_df_lst[[3]] <- .plot_celltype("Glial progenitors", cutoff = 2, return_df = TRUE); 
+# cells near the edge and middle
+all_celltype_df_lst[[4]] <- .plot_celltype("Immune", cutoff = 1, return_df = TRUE); 
+# little cells distributed across
+all_celltype_df_lst[[5]] <- .plot_celltype("Neuronal progenitors", cutoff = 0.8, return_df = TRUE); 
+# cells surrounded the edge
+all_celltype_df_lst[[6]] <- .plot_celltype("Neurons", cutoff = 1.2, return_df = TRUE); 
+# more toward the inside
+all_celltype_df_lst[[7]] <- .plot_celltype("OPC", cutoff = 3, return_df = TRUE)
+# distribute near the edge of left and right, and in the middle
+all_celltype_df_lst[[8]] <- .plot_celltype("Oligodendrocytes", cutoff = 1.3, return_df = TRUE)
+# distribute near the edge and middle
+all_celltype_df_lst[[9]] <- .plot_celltype("Proliferating OPC", cutoff = 0.9, return_df = TRUE)
+# distrbuted across, seems to have pattern
+all_celltype_df_lst[[10]] <- .plot_celltype("RGC", cutoff = 1, return_df = TRUE)
+# distribute on the left edge, and little on the right
+all_celltype_df_lst[[11]] <- .plot_celltype("Uncertain", cutoff = 0.6, return_df = TRUE)
+# seems to be around the outer ring and middle
+all_celltype_df_lst[[12]] <- .plot_celltype("Vascular & other", cutoff = 5, return_df = TRUE)
+# distribute only on the left
+names(all_celltype_df_lst) <- unique_celltypes;
+```
+
+Plot the overview of the cell type distributions.
+
+```{r}
+# plot all cell types together
+all_celltype_df <- do.call(rbind, all_celltype_df_lst);
+colnames(all_celltype_df) <- c("array_x", "array_y", "cell_type");
+
+ggplot(all_celltype_df, aes(array_x, array_y, color = cell_type)) +
+  geom_point(size = 1.5, alpha = 0.5) +
+  scale_color_manual(values = plotting_colors) +
+  labs(x = "array_x", y = "array_y") +
+  theme_classic() +
+  xlim(10, 60) + ylim(0, 110)
+
+
+gsm6432725_celltypes_plt <- 
+  ggplot(all_celltype_df, aes(array_x, array_y, color = cell_type)) +
+  geom_point(size = 1.5, alpha = 0.5) +
+  scale_color_manual(values = plotting_colors) +
+  labs(x = "array_x", y = "array_y") +
+  theme_classic() +
+  xlim(10, 60) + ylim(0, 110) + 
+  facet_wrap(~cell_type,  ncol = 3)
+gsm6432725_celltypes_plt
+```
+
+### Visium st004 & scRNA-seq-GSM6432735
+```{r}
+# set up
+plotting_colors <- c("#000000", "#E69F00", "#56B4E9", "#009E73", 
+  "#F0E442", "#0072B2", "#D55E00", "#CC79A7","darkred", "#332288",
+  "#888888", "#661100")
+
+
+visium_sample <- "st004";
+scrna_sample <- "gsm6432735";
+
+cell2loc_output <- qread(
+  paste0("../ped-hgg-st/cell2location/st004/results_", scrna_sample, "_", 
+    visium_sample, "/cell_type_mapping_estimations.csv")
+)
+
+dim(cell2loc_output) # [1] 1347   20
+cell2loc_output[1:5, ]
+
+unique_celltypes <- tolower(gsub(" ", "_", colnames(cell2loc_output)[-c(1:8)])); 
+# first 7 columns are not cell type
+unique_celltypes[12] <- "vascular_n_other"; # to replace the & with n
+```
+
+```{r, out.width = "50%", out.height = "50%"}
+all_celltype_df_lst <- vector(mode = "list", length = length(unique_celltypes))
+all_celltype_df_lst[[1]] <- .plot_celltype("Astrocytes", cutoff = 3, return_df = TRUE);
+# distributed across
+all_celltype_df_lst[[2]] <- .plot_celltype("Ependymal", cutoff = 0.6, return_df = TRUE); 
+# distributed across
+all_celltype_df_lst[[3]] <- .plot_celltype("Glial progenitors", cutoff = 1.5, return_df = TRUE); 
+# cells near the edge and middle
+all_celltype_df_lst[[4]] <- .plot_celltype("Immune", cutoff = 1, return_df = TRUE); 
+# little cells distributed across
+all_celltype_df_lst[[5]] <- .plot_celltype("Neuronal progenitors", cutoff = 0.8, return_df = TRUE); 
+# cells disperse the edge and middle
+all_celltype_df_lst[[6]] <- .plot_celltype("Neurons", cutoff = 0.8, return_df = TRUE); 
+# distributed across
+all_celltype_df_lst[[7]] <- .plot_celltype("OPC", cutoff = 1.6, return_df = TRUE)
+# distribute near the edge of left and right, and in the middle
+all_celltype_df_lst[[8]] <- .plot_celltype("Oligodendrocytes", cutoff = 2.2, return_df = TRUE)
+# similar to OPC but fewer points
+all_celltype_df_lst[[9]] <- .plot_celltype("Proliferating OPC", cutoff = 1.1, return_df = TRUE)
+# distrbuted across
+all_celltype_df_lst[[10]] <- .plot_celltype("RGC", cutoff = 1, return_df = TRUE)
+# distribute on the left edge, and little on the right
+all_celltype_df_lst[[11]] <- .plot_celltype("Uncertain", cutoff = 0.6, return_df = TRUE)
+# seems to be around the outer ring and middle
+all_celltype_df_lst[[12]] <- .plot_celltype("Vascular & other", cutoff = 6, return_df = TRUE)
+# few points distribute only on the left
+names(all_celltype_df_lst) <- unique_celltypes;
+```
+
+Overview of the distribution:
+```{r}
+# plot all cell types together
+all_celltype_df <- do.call(rbind, all_celltype_df_lst);
+colnames(all_celltype_df) <- c("array_x", "array_y", "cell_type");
+
+ggplot(all_celltype_df, aes(array_x, array_y, color = cell_type)) +
+  geom_point(size = 1.5, alpha = 0.5) +
+  scale_color_manual(values = plotting_colors) +
+  labs(x = "array_x", y = "array_y") +
+  theme_classic() +
+  xlim(10, 60) + ylim(0, 110)
+
+
+gsm6432735_celltypes_plt <-
+  ggplot(all_celltype_df, aes(array_x, array_y, color = cell_type)) +
+  geom_point(size = 1.5, alpha = 0.5) +
+  scale_color_manual(values = plotting_colors) +
+  labs(x = "array_x", y = "array_y") +
+  theme_classic() +
+  xlim(10, 60) + ylim(0, 110) + 
+  facet_wrap(~cell_type,  ncol = 3)
+gsm6432735_celltypes_plt
+```
+
+\newpage
+
+### Compare the spatial distribution of cell types of 3 scRNA-seq data
+```{r, out.width = "50%", out.height = "50%"}
+gsm6432723_celltypes_plt
+gsm6432725_celltypes_plt
+gsm6432735_celltypes_plt
+```
+
+## Point Pattern Analysis (TODO: current is on incorrect data)
+We are wondering whether the spatial grouping are actual statically significant clustering or random grouping, we will use G function and F function for this question.
+
+### scRNA-seq-GSM6432723
+
+```{r}
+# set up
+
+visium_sample <- "st004";
+scrna_sample <- "gsm6432723";
+
+cell2loc_output <- qread(
+  paste0("../ped-hgg-st/cell2location/st004/results_", scrna_sample, "_", 
+    visium_sample, "/cell_type_mapping_estimations.csv")
+)
+
+# rename columns to remove the "&" and space, and to lower case
+colnames(cell2loc_output) <- 
+  tolower(gsub("&", "n", gsub(" ", "_", colnames(cell2loc_output))));
+
+# cutoff_df are from previous analysis
+cutoff_df <- qread(
+  paste0("../ped-hgg-st/cell2location/st004/results_", scrna_sample, "_", 
+    visium_sample, "/explore/celltype_cutoff.tsv")
+)
+```
+
+```{r}
+# create function for generate sub cell type data
+# required cell2loc_output
+.create_celltype_df <- function(celltype_name, cutoff){
+  present_cutoff <- cutoff;
+  
+  celltype_df <- data.frame(
+    "array_row" = cell2loc_output$array_row,
+    "array_col" = cell2loc_output$array_col,
+    "present" = ifelse(cell2loc_output[[celltype_name]] > present_cutoff, 1, 0)
+  )
+  
+  celltype_df <- celltype_df[celltype_df$present == 1, ]
+  celltype_df$present <- celltype_name;
+  
+  celltype_df
+}
+```
+
+```{r}
+# keep all dfs into a list
+all_celltype_df_lst <- vector(mode = "list", length = nrow(cutoff_df));
+for (row_i in 1:nrow(cutoff_df)){
+  target_celltype <- cutoff_df$celltype[row_i]
+  target_cutoff <- cutoff_df$cutoff[row_i]
+  all_celltype_df_lst[[row_i]] <- .create_celltype_df(target_celltype, target_cutoff)
+}
+names(all_celltype_df_lst) <- cutoff_df$celltype;
+```
+
+Set up spatial analysis...
+The window size used will be the min and max of the Cell2location array row and array column.
+
+```{r}
+# spatial analysis
+window_space <- owin(
+  c(min(cell2loc_output$array_row), max(cell2loc_output$array_row)), 
+  c(min(cell2loc_output$array_col), max(cell2loc_output$array_col))
+);
+```
+
+Turn the df into ppp object required for running G function.
+```{r}
+# turn the list of dfs into list of ppp objects
+all_celltype_ppp_lst <- lapply(all_celltype_df_lst, function(x){
+  ppp_df <- x[, !colnames(x) == "present"]
+  as.ppp(ppp_df, W = window_space)
+})
+
+# G functions
+all_celltype_g_fct_lst <- lapply(all_celltype_ppp_lst, function(x){
+  Gest(x, correction = "none")
+})
+
+# function for plotting
+.plot_g_envelope <- function(celltype, n_sim = 99){
+  plot(envelope(all_celltype_ppp_lst[[celltype]], Gest, 
+    nsim = n_sim, funargs = list(correction = "none")),
+    main = celltype) 
+}
+```
+
+#### G function plots
+
+```{r, out.width = "50%", out.height = "50%"}
+.plot_g_envelope("astrocytes") # cluster, but close to random
+.plot_g_envelope("ependymal") # cluster, but close to random
+.plot_g_envelope("glial_progenitors") # cluster
+.plot_g_envelope("immune") # cluster
+.plot_g_envelope("neuronal_progenitors") # no cluster
+.plot_g_envelope("neurons") # no cluster
+.plot_g_envelope("opc") # cluster
+.plot_g_envelope("oligodendrocytes") # cluster
+.plot_g_envelope("rgc") # cluster, but close to random
+.plot_g_envelope("uncertain") # cluster
+.plot_g_envelope("vascular_n_other") # cluster
+```
+
+We are also interested in F function.
+```{r}
+# F functions
+.plot_f_envelope <- function(celltype, n_sim = 99){
+  plot(envelope(all_celltype_ppp_lst[[celltype]], Fest, 
+    nsim = n_sim, funargs = list(correction = "none")),
+    main = celltype) 
+}
+```
+
+#### F function plots
+```{r, out.width = "50%", out.height = "50%"}
+.plot_f_envelope("astrocytes") # even distributed with some clusters?
+.plot_f_envelope("ependymal") # even distributed with some clusters?
+.plot_f_envelope("glial_progenitors") # clustered
+.plot_f_envelope("immune") # clustered
+.plot_f_envelope("neuronal_progenitors") # random + clustered?
+.plot_f_envelope("neurons") # random + clustered?
+.plot_f_envelope("opc") # clustered
+.plot_f_envelope("oligodendrocytes") # clustered
+.plot_f_envelope("rgc") # random + clustered?
+.plot_f_envelope("uncertain") # clustered
+.plot_f_envelope("vascular_n_other") # clustered
+```
+
+## Cell annotation on SCPCA datasets
+```{r}
+# set up
+source("../ped-hgg-st/cell_annotations/R/common.R")
+```
+
+### scpcs000016
+
+```{r}
+# load data
+scrna_file_id <- "000016";
+scrna_data <- readRDS(paste0("../ped-hgg-st/cell_annotations/scpca/scpcs", 
+  scrna_file_id, "/scpcl", scrna_file_id, "_qc.rds"));
+```
+
+Look at the data.
+```{r}
+# sum - contains the total counts for each cell
+# detect - contains the number of detected genes
+# subsets_mito_percent - contains the percentage of reads mapped to mitochondrial transcript
+summary(colData(scrna_data)$sum);
+summary(colData(scrna_data)$detected);
+summary(colData(scrna_data)$subsets_mito_percent);
+
+# log-normalized counts
+scrna_data <- logNormCounts(scrna_data);
+log_normalized_counts <- logcounts(scrna_data);
+dim(log_normalized_counts) # 60319   569
+
+```
+
+Perform quick clustering and look at how the clusters distributed and their
+mitochondria content.
+
+```{r, out.width = "50%", out.height = "50%"}
+# cluster
+set.seed(123);
+clusters <- quickCluster(log_normalized_counts);
+table(clusters);
+
+# add in label information
+colLabels(scrna_data) <- clusters;
+
+# total UMI counts for RNA-seq data 
+ggplot(data.frame(colData(scrna_data), clusters), aes(x = clusters, y = total)) +
+  theme_classic() +
+  geom_violin() +
+  scale_y_log10();
+
+# mitochondria percentage
+ggplot(data.frame(colData(scrna_data), clusters), aes(x = clusters,
+  y = subsets_mito_percent)) + 
+  theme_classic() +
+  geom_violin();
+
+# quantify per-gene variation
+dec <- modelGeneVar(scrna_data);
+with(dec, plot(mean, total, xlab = "mean log-expr", ylab = "variance"));
+curve(metadata(dec)$trend(x), col = "blue", add = TRUE);
+
+
+# tSNE
+set.seed(123);
+scrna_data <- runTSNE(scrna_data);
+cidx <- sample(1:ncol(scrna_data));
+
+plotTSNE(scrna_data[, cidx], colour_by = "label", text_by = "label", 
+  point_alpha = 0.3);
+plotTSNE(scrna_data[, cidx], colour_by = "total", text_by = "label", 
+  point_alpha = 0.3);
+plotTSNE(scrna_data[, cidx], colour_by = "sum", text_by = "label");
+plotTSNE(scrna_data[, cidx], colour_by = "sizeFactor", text_by = "label");
+
+# mitochondria
+plotTSNE(scrna_data[, cidx], colour_by = "subsets_mito_percent", text_by = "label",
+  point_alpha = 0.3)
+
+# UMAP - replace the original one stored in the RDS
+set.seed(123);
+scrna_data <- runUMAP(scrna_data);
+plotUMAP(scrna_data[, cidx], colour_by = "label", text_by = "label", 
+  point_alpha = 0.3);
+plotUMAP(scrna_data[, cidx], colour_by = "sizeFactor", 
+  text_by = "label");
+
+
+# identify cluster markers
+markers <- scoreMarkers(scrna_data);
+
+markers_selected <- lapply(markers, function(x){
+  x[order(x$mean.AUC, decreasing = TRUE)[1:50], c("self.average", 
+  "other.average", "mean.AUC")]
+});
+
+
+# convert ensembl to gene symbol
+markers_selected_gene_symbol <- lapply(markers_selected, function(x){
+  ensembl_to_symbol(rownames(x))
+});
+
+# markers_selected_gene_symbol # not print in Rmarkdown 
+```
+
+No cluster that is mitochondria dominated. We can move on to more precise clustering.
+
+```{r, out.width = "50%", out.height = "50%"}
+# re-run analysis, clusters and tSNE
+# top highly variable genes
+top_hvgs_lst <- getTopHVGs(dec, prop = 0.2);
+
+# reduce data dimension using PCA
+scrna_data <- denoisePCA(scrna_data, dec, 
+  subset.row = top_hvgs_lst, min.rank = 10);
+
+set.seed(123);
+snn_graph <- buildSNNGraph(scrna_data, use.dimred = "PCA");
+
+clusters <- factor(igraph::cluster_walktrap(snn_graph)$membership)
+table(clusters)
+
+colLabels(scrna_data) <- clusters;
+
+cidx <- sample(1:ncol(scrna_data));
+
+# check clusters
+plotTSNE(scrna_data, colour_by = "label", text_by = "label", point_alpha = 0.3);
+plotUMAP(scrna_data, colour_by = "label", text_by = "label", point_alpha = 0.3);
+
+ggplot(data.frame(colData(scrna_data)), aes(x = label, y = total)) +
+  theme_classic() +
+  geom_violin() +
+  scale_y_log10()
+
+ggplot(data.frame(colData(scrna_data)), aes(x = label, y = subsets_mito_percent)) +
+  theme_classic() +
+  geom_violin()
+
+# identify cluster markers
+markers_filter <- scoreMarkers(scrna_data);
+
+markers_selected <- lapply(markers_filter, function(x){
+  x[order(x$mean.AUC, decreasing = TRUE)[1:50], c("self.average", 
+  "other.average", "mean.AUC")]
+});
+
+# convert ensembl to gene symbol
+markers_selected_gene_symbols <- lapply(markers_selected, function(x){
+  ensembl_to_symbol(rownames(x))
+});
+
+markers_selected_gene_symbols
+
+# convert ensembl ids to gene symbol in the scrna data
+rownames_gene_symbols <- ensembl_to_symbol(rownames(scrna_data));
+scrna_data_removed <- scrna_data[!is.na(rownames_gene_symbols), ];
+rownames(scrna_data_removed) <- ensembl_to_symbol(rownames(scrna_data_removed));
+```
+
+#### Verify gene markers
+
+Start labelling cells according to the gene markers:
+
+```{r, out.width = "60%", out.height = "60%"}
+# label cells
+# create a function for easy plotting
+# required the sce object (i.e., sce_gene_symbols)
+.plot_gene <- function(gene){
+  plotTSNE(scrna_data_removed[, cidx], colour_by = gene, text_by = "label",
+    point_alpha = 0.3);
+}
+
+# cluster 1
+.plot_gene("PTPRZ1") # OPC
+
+.plot_gene("GFAP") # Astrocyte
+.plot_gene("MT2A") # Astrocyte
+
+.plot_gene("MT3") # Astrocyte
+.plot_gene("NDRG2") # Astrocyte
+.plot_gene("MT1M") # Astrocyte
+.plot_gene("CLU") # Astrocyte
+.plot_gene("SPARCL1") # Astrocyte
+
+# although gene PTPRZ1 (OPC) has particular high expression on cluster 1
+# there are more astrocyte gene markers expressed in cluster 1
+# conclusion: cluster 1: Astrocyte
+
+# cluster 2
+.plot_gene("APOE") # Astrocyte
+.plot_gene("GFAP") # Astrocyte
+.plot_gene("MT2A") # Astrocyte
+.plot_gene("MT3") # Astrocyte
+.plot_gene("MT1X") # Astrocyte
+.plot_gene("NDRG2") # Astrocyte
+
+# conclusion: cluster 2: Astrocyte
+
+# cluster 3
+.plot_gene("PTPRZ1") # OPC
+.plot_gene("NOVA1") # OPC
+
+.plot_gene("EGFR") # GBM
+.plot_gene("PTPRZ1") # GBM
+
+# conclusion: cluster 3: Glioblastoma cells, the gene markers for GBM have higher
+# mean.AUC
+
+# cluster 4
+.plot_gene("CD4") # CD4+ T cells
+.plot_gene("CD74") # myeloid
+
+# conclusion: cluster 4: CD4+ T cells, the gene marker for CD4+ T cells have a
+# higher mean.AUC
+
+# cluster 5
+.plot_gene("CD247") # t-cell
+.plot_gene("CD96") # t-cell
+.plot_gene("CD3D") # t-cell
+.plot_gene("CD3G") # t-cell
+.plot_gene("CD3E") # t-cell
+
+# conclusion: cluster 5: T-cell
+
+# cluster 6
+.plot_gene("GPNMB") # Macrophages
+.plot_gene("AXL") # Macrophages
+
+# conclusion: cluster 6: Macrophages
+
+# cluster 7
+.plot_gene("GPR34") # microglia
+.plot_gene("CD63") # myeloid
+
+
+# conclusion: cluster 7: Microglial cells, gene marker for microglia has a
+# higher mean AUC
+
+# cluster 8:
+.plot_gene("P2RY12") # microglial
+
+# conclusion: cluster 8: Microglial cells
+
+# cluster 9:
+.plot_gene("CD247") # t-cell
+.plot_gene("CD96") # t-cell
+
+# conclusion: cluster 9: T cells
+
+# cluster 10:
+.plot_gene("CD79A") # b-cell
+
+# conclusion: cluster 10: B cells
+
+# cluster 11:
+.plot_gene("SYT1") # neuron
+.plot_gene("DCX") # neuron
+# conclusion: cluster 11: neuronal cells
+```
