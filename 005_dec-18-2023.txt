@@ -1,7 +1,13 @@
 DONE:
 - Cell annotation on scpca dataset
 	- scpcs000016
-- Cell2location spatial analysis
+- Cell2location spatial analysis *repeat with fixed data
 	- determine the distribution of each cell type
 	- G function analysis
 	- F function analysis
+- Gene marker verification
+- Overlaying coordinate on .tiff Visium data
+
+TODO:
+- Quantify cell abundance in Cell2location
+- Point Pattern Analysis
