@@ -1,0 +1,16 @@
+DONE:
+	- refactor codes for ovarian cancer projects
+		- gendoo_et_al_19 & liu_et_al_20
+			- merged scripts
+			- standardize output filenames
+			- re-download annotation data for GSE9891
+		- other_hgsoc_datasets
+			- explore exprs distribution of GSE165808
+				- download raw data from SRA
+	- written description
+		- Samples and clinical data
+		- Preprocess and normalize data
+
+TODO:
+	- refactor codes for ovarian cancer projects
+		- other_hgsoc_datasets
