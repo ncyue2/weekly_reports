@@ -11,6 +11,7 @@ DONE:
 		- Samples and clinical data
 		- Preprocess and normalize data
 
+* no Rmarkdown, but refer to the written description and db-hgsov-cisp repo.
 TODO:
 	- refactor codes for ovarian cancer projects
 		- other_hgsoc_datasets
