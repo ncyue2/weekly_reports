@@ -10,6 +10,7 @@ DONE:
 
 TODO:
 - continue on reproducing the repo
+	- ComBat
 	- Deconvolution
 	- Downstream analysis
 - written description on the spatial transcriptomic project
