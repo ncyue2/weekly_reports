@@ -1,0 +1,15 @@
+DONE:
+- Reproduce db-hgsov-cisp repo
+	- Organize all datasets into ./public_datasets/
+	- Refactor and combines the phenotype annotation data
+	- Transform expression data and record the transformation on google sheet
+	- Organize common R codes into scripts and keep in the R directory
+	- Compare microarray and rna-seq platforms
+
+**No written weekly report; refer to the repo**
+
+TODO:
+- continue on reproducing the repo
+	- Deconvolution
+	- Downstream analysis
+- written description on the spatial transcriptomic project
